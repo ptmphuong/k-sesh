@@ -1,0 +1,179 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <errno.h>
+#include <signal.h>
+#define MAXARGS 5
+#define MAXLINE 8192
+
+// TODO: Put your command names here
+char* commands[] = {"cd\n", "cd", "help\n", "help", "exit\n", "exit"};
+char* cd_commands[] = {"cd\n", "cd"};
+char* exit_commands[] = {"exit\n", "exit"};
+char* help_commands[] = {"help\n", "help"}; 
+
+void* Cd(char* input) {
+  // TODO: Implement cd
+  
+}
+
+void* Help() {
+  // TODO: Implement cd
+  printf("  cd: change directory.\n  help: see a list of all command.\n exit: exit the program.\n");
+}
+
+
+void* Exit() {
+  return 0;
+}
+
+
+// TODO: Put your command function pointers here
+void* (*command_functions[])(char*) = {Cd, Help, Exit};
+
+/***
+ **  Wrapper of fork(). Checks for fork errors, quits on error. 
+ **/
+pid_t Fork(void) {
+  pid_t pid;  
+  if ((pid = fork()) < 0) {
+    fprintf(stderr, "%s: %s\n", "fork error", strerror(errno));
+    exit(0);
+  }
+  return pid;
+}
+
+/***
+ **  Wrapper of fgets. Checks and quits on Unix error. 
+ **/
+char* Fgets(char *ptr, int n, FILE *stream) {
+  char *rptr;
+  if (((rptr = fgets(ptr, n, stream)) == NULL) && ferror(stream)) {
+    fprintf(stderr, "%s\n", "fgets error");
+    exit(0);
+  }
+  return rptr;
+}
+
+// Is the command one built into the shell?
+// That is, that the *shell* has implemented?
+// If so, execute it here
+int builtin_command(char** argv) {
+  // Loop through
+  int i;
+  for (i = 0; i < 5; i++) {
+    int res = strcmp(commands[i], argv[0]);
+ 
+    if (res == 0) {
+    // call the right function.
+      (command_functions[i])(argv[1]); // some argument
+    }
+  }
+}
+
+int in_builtin_command(char** argv, char** command_list) {
+  // Loop through
+  int i;
+  int res = 1;
+  for (i = 0; i < 5; i++) {
+    res = strcmp(commands[i], argv[0]);
+    if (res == 0) { 
+      return res; 
+    }
+  }
+  return 1;
+}
+
+void eval(char *cmdline) {
+  char *argv[MAXARGS]; /* Argument list execve() */
+  char buf[MAXLINE]; /* Holds modified command line */
+  int index = 0;
+  pid_t pid; /* Process id */
+  pid_t waitPid; /* wait process id */
+  int status;
+
+  strcpy(buf, cmdline);
+  // Split buf into args and put into argv
+  char* token = strtok(buf, " ");
+  while (token != NULL) {
+     int token_len = strlen(token);
+     //token[token_len] = '\0';
+     argv[index] = token;
+     printf("argv %d: %s\n", index, argv[index]);
+     index++;
+     token = strtok(NULL, " ");
+  }
+  
+  // printf("test in buildin command %d\n", in_builtin_command(argv));
+
+  if (argv[0] == NULL) {
+    printf("empty\n");
+    return; /* Ignore empty lines */
+  }
+
+  // Check that the command/program exists in Unix (ie /bin/) OR (see below) 
+  if (!in_builtin_command(argv, commands)) {
+    printf("not builtin command\n");
+
+    // Create a child process 
+    pid = fork();
+
+    // running child process
+    if (pid == 0) {
+      if (execvp(argv[0], argv) == 1) { 
+        perror("k-sea shell error");
+      }
+      exit(EXIT_FAILURE);
+
+    } else if (pid < 0) { // error forking
+        perror("k-sea shell error");
+
+    } else { // running parent process
+      do {
+        waitPid = waitpid(pid, &status, WUNTRACED);
+      } while (!WIFEXITED(status) && !WIFSIGNALED(status)); // exit normally (or with an error code), or killed by a signal
+    }
+
+
+    // Run the program/command (execve...)-- what is the result of exec if the command is bogus?
+//  char* argv[] = { "jim", "jams", NULL };
+  char* envp[] = { "some", "environment", NULL };
+    int res = execve(".", argv, envp); // see run_ls.c for an example
+    if (res < 0) {
+      //print error message
+    }
+
+  } else {
+    printf("is builtin command\n");
+    if (in_builtin_command(argv, exit_commands)) {
+      Exit();
+    }
+    // What do we do if it *IS* a command built into the shell?
+  }
+
+
+  // TODO: Be sure to wait for the child process to terminate
+  
+  return;
+}
+
+int main() {
+
+  char cmdline[MAXLINE]; /* command line buffer */
+  while (1) {
+    // Print command prompt
+    printf("> ");
+
+    // Read input from user
+    Fgets(cmdline, MAXLINE, stdin);
+
+    // If we get the eof, quit the program/shell
+    if (feof(stdin))
+      exit(0);
+
+    // Otherwise, evaluate the input and execute. 
+    eval(cmdline);
+
+  }
+}
